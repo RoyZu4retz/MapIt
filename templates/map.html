@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MapIt</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        body { font-family: sans-serif; text-align: center; }
+
+        #map { height: 500px; width: 80%; margin: 10px auto; border: 2px solid black; }
+
+        #game-ui { margin-top: 10px; }
+
+        #city-name { font-size: 2em; font-weight: bold; }
+
+        #score-board { font-size: 1.2em; color: #555; }
+
+        .game-button {
+            display: none; /* Hide buttons by default */
+            padding: 10px 20px;
+            font-size: 1.2em;
+            margin: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-ui">
+        <h2>Level {{ level }} (City {{ city_count_in_level }} / 5)</h2>
+        <div id="city-name"><b>{{ city_name }}, {{ city_country }}</b></div>
+        <div id="score-board">Total Score (lowest wins): {{ total_score | round(2) }}, Correct countries: {{ countries_count }}/{{ current_index }}</div>
+    </div>
+
+    <h2 id="result-display">Click once to set the first pin.</h2>
+
+    <div id="map"></div>
+
+    <button id="submit-button" class="game-button">Submit Guess</button>
+    <button id="next-button" class="game-button">Next</button>
+
+    <script>
+        // --- 1. GLOBAL VARIABLES ---
+        let guessMarker = null;
+        let correctMarker = null;
+        let distanceLine = null;
+        let userGuess = null; // To store {lat, lon}
+
+        const submitButton = document.getElementById('submit-button');
+        const nextButton = document.getElementById('next-button');
+        const scoreBoard = document.getElementById('score-board');
+
+        // --- 2. INITIALIZE MAP ---
+        const map = L.map('map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+            maxZoom: 20
+        }).addTo(map);
+
+        // --- 3. MAP CLICK LOGIC ---
+        map.on('click', function(event) {
+            // Don't allow new clicks if a guess has been submitted
+            if (correctMarker) return;
+
+            // Remove old guess marker if it exists
+            if (guessMarker) {
+                map.removeLayer(guessMarker);
+            }
+
+            // Add new guess marker
+            userGuess = event.latlng; // Store the lat/lon
+            guessMarker = L.marker(userGuess).addTo(map)
+                .bindPopup("Your Guess").openPopup();
+
+            // Show the submit button
+            submitButton.style.display = 'inline-block';
+        });
+
+        // --- 4. SUBMIT BUTTON LOGIC ---
+        submitButton.onclick = async function() {
+            if (!userGuess) return; // No guess made
+
+            // Hide button, disable map clicks
+            submitButton.style.display = 'none';
+
+            // Send the guess to our Flask server
+            const response = await fetch("{{ url_for('submit_guess') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lat: userGuess.lat, lon: userGuess.lng })
+            });
+
+            const result = await response.json();
+
+            // --- 5. PROCESS THE RESULT ---
+
+            // Show the correct answer
+            const correctLatLng = [result.correct_lat, result.correct_lon];
+            correctMarker = L.marker(correctLatLng, {
+                icon: L.icon({ // Make a green icon for the answer
+                    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                    iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+                })
+            }).addTo(map)
+                .bindPopup("{{ city_name }}, {{ city_country }}").openPopup();
+
+            // Draw a line between guess and answer
+            distanceLine = L.polyline([userGuess, correctLatLng], {color: 'red'}).addTo(map);
+
+            // Zoom the map to fit both points
+            map.fitBounds(distanceLine.getBounds(), {padding: [50, 50]});
+
+            // Update score board and show "Next" button
+            let message = `You were ${result.distance.toFixed(2)} km off. `;
+
+            if (result.is_correct_country) {
+                message += `You have guessed the correct country! `;
+            } else {
+                message += `You have guessed ${result.guessed_country} instead of ${result.correct_country}! `;
+            }
+
+            message += '<br>'
+            message += `Total Score: ${result.total_score.toFixed(2)}, `;
+            message += `Correct countries: ${result.countries_count}/${result.current_index}`;
+
+            scoreBoard.innerHTML = message;
+
+            if (result.is_level_end) {
+                scoreBoard.innerText += ` | ${result.level_message}`;
+            }
+
+            nextButton.style.display = 'inline-block';
+
+            // Set the "Next" button's purpose
+            nextButton.onclick = function() {
+                if (result.is_game_end) {
+                    window.location.href = "{{ url_for('game_over') }}";
+                } else {
+                    window.location.href = "{{ url_for('play_game') }}";
+                }
+            };
+        };
+    </script>
+</body>
+</html>

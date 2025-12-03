@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MapIt</title>
+</head>
+<body style="text-align: center;">
+    <h1>Game Over!</h1>
+    <h2>Your final score is:<br>{{ final_score }}</h2>
+    <h3>You have guessed:<br>{{ correct_countries }}/25 countries correctly</h3>
+    <a href="{{ url_for('home_page') }}">Return to home page</a>
+</body>
+</html>
